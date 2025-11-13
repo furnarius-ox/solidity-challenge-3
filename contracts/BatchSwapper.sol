@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+
+// Los {} fueron sugeridos por Cursor
 import {IERC20} from "openzeppelin-contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "openzeppelin-contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "openzeppelin-contracts/token/ERC20/utils/SafeERC20.sol";
@@ -10,59 +12,66 @@ import {ReentrancyGuard} from "openzeppelin-contracts/utils/ReentrancyGuard.sol"
 contract BatchSwapper is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
-    // Estado del batch
+    // estado del batch
     enum Phase { Collecting, Swapped }
     Phase public phase;
 
     //  Tokens 
     IERC20 public immutable fromToken;
     IERC20 public immutable toToken;
+
+    //Sugerencia de Cursor
     uint8  private immutable decimalsFrom;
     uint8  private immutable decimalsTo;
+    //
 
-    // Contabilidad. Struct para tener un solo mapping 
+    // Contabilidad. Struct para tener un solo mapping
     struct Account {
         uint256 fromDeposited; // cuánto A depositó el usuario (fromToken)
         uint256 toClaimed;     // cuánto B ya cobró (toToken)
     }
 
-    mapping(address => Account) public accounts; 
+    mapping(address => Account) public accounts; //Un mapping de structs 
     uint256 public totalFrom;                  
-    uint256 public exchangeRate = 1e18;                 
+    uint256 public exchangeRate = 1e18;    // lo sugirió cursor             
 
-    // Events
+    // events
     event Provided(address indexed user, uint256 amountFrom);
     event WithdrawnFrom(address indexed user, uint256 amountFrom);
     event Swapped(uint256 totalFrom, uint256 expectedTo, uint256 exchangeRate);
     event WithdrawnTo(address indexed user, uint256 amountTo);
     event PrefundedToToken(address indexed user, uint256 amount);
 
-    // Modifiers
+    // modifiers
     modifier onlyCollecting() {
-        require(phase == Phase.Collecting, "No collect");
+        require(phase == Phase.Collecting, "No collecting");
         _;
     }
 
     modifier onlySwapped() {
-        require(phase == Phase.Swapped, "No swap");
+        require(phase == Phase.Swapped, "No swapping");
         _;
     }
 
     // constructor
-    constructor(address fromToken_, address toToken_) Ownable(msg.sender) { //dirección del contrato DAI y USDC x ej. 
+    constructor(address fromToken_, address toToken_) Ownable(msg.sender) { //dirección del contrato de los tokens (DAI y USDC x ej). 
                                                                             // Volver a buscar Ownable
         require(fromToken_ != address(0) && toToken_ != address(0));
         fromToken = IERC20(fromToken_); // convierte la dirección en una referencia a un contrato ERC20,
                                         // para poder usar sus funciones (transfer, transferFrom, etc.).
         toToken   = IERC20(toToken_); // convierte la dirección en una referencia a un contrato ERC20,
+          
                                       //para poder usar sus funciones (transfer, transferFrom, etc.).
-       
+       //cursor
         decimalsFrom = IERC20Metadata(fromToken_).decimals(); // obtiene el número de decimales del token A
         decimalsTo   = IERC20Metadata(toToken_).decimals(); // obtiene el número de decimales del token B
-       
+        //
+
         phase = Phase.Collecting; // inicializa la fase en Collecting
     }
 
+    //funciones mutativas
+    //Es la función para proveer liquidez. El non reentrant es necesario si es onlyOwner?
     function prefundToToken(uint256 amount) external onlyOwner nonReentrant {
         require(amount > 0);
         toToken.safeTransferFrom(msg.sender, address(this), amount);
@@ -84,10 +93,13 @@ contract BatchSwapper is Ownable, ReentrancyGuard {
     // 1 a 1
     function swap() external onlyOwner onlyCollecting nonReentrant {
         require(totalFrom > 0);
-        // A cuanto B equivale lo juntado, ajustando por decimales (1:1 humano)
+        // A cuanto B equivale lo juntado. Pero es 1 a 1 ajustando por decimales (1:1 humano)
+        // De nuevo, esto me lo sugiere cursor, tengo que ver mejor lo de los decimales
         uint256 expectedTo = _scaleFromTo(totalFrom);
-        // Esto estará bien? Este pedacito es para exigir prefondeo suficiente de B en el contrato
+
+        // Este pedacito es para exigir prefondeo suficiente de B en el contrato
         require(toToken.balanceOf(address(this)) >= expectedTo);
+        
         // Pasamos a fase de reparto
         phase = Phase.Swapped;
         emit Swapped(totalFrom, expectedTo, exchangeRate);
